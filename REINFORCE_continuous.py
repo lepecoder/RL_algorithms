@@ -14,29 +14,22 @@ class Policy(nn.Module):
     def __init__(self):
         super(Policy, self).__init__()
         self.affine1 = nn.Linear(3, 64)
-        self.affine2 = nn.Linear(64, 128)
-        self.affine2
-        # self.dropout = nn.Dropout(p=0.6)
-        self.affine2 = nn.Linear(64, 1)
-        self.affine2_ = nn.Linear(64, 1)
+        self.affine2 = nn.Linear(64, 64)
+        self.affine3 = nn.Linear(64, 1)
+        self.affine3_ = nn.Linear(64, 1)
 
     def forward(self, x):
         x = torch.squeeze(x)
-        x = self.affine1(x)
-        # x = self.dropout(x)
-        x = F.relu(x)
-        mu = self.affine2(x)
-        sigma = self.affine2_(x)
+        x = F.relu(self.affine1(x))
+        x = F.relu(self.affine2(x))
+        mu = self.affine3(x)
+        sigma = self.affine3_(x)
         sigma = F.softplus(sigma)
-        # action_scores = self.affine2(x)
-        # return F.softmax(action_scores, dim=1)
         return mu, sigma
 
 
 # %%
 env = gym.make('Pendulum-v1')
-# policy = Policy()
-# optimizer = optim.Adam(policy.parameters(), lr=1e-2)
 eps = np.finfo(np.float32).eps.item()  # 一个极小值
 gamma = 0.9
 render = False
