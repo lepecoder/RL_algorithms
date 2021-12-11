@@ -1,10 +1,5 @@
-# 策略梯度算法
-# 2020.5.22
-
-import argparse
 import numpy as np
 import gym
-from itertools import count
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -26,7 +21,6 @@ torch.manual_seed(seed)    # 策略梯度算法方差很大，设置seed以保�
 
 
 class Policy(nn.Module):
-    # 离散空间采用了 softmax policy 来参数化策略
     def __init__(self):
         super(Policy, self).__init__()
         # 一个三层的神经网络

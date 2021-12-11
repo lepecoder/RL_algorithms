@@ -9,6 +9,13 @@ from torch.distributions import Categorical
 
 # %%
 
+# %%
+env = gym.make('Pendulum-v1')
+eps = np.finfo(np.float32).eps.item()  # 一个极小值
+gamma = 0.9
+render = False
+log_interval = 100
+
 
 class Policy(nn.Module):
     def __init__(self):
@@ -27,13 +34,6 @@ class Policy(nn.Module):
         sigma = F.softplus(sigma)
         return mu, sigma
 
-
-# %%
-env = gym.make('Pendulum-v1')
-eps = np.finfo(np.float32).eps.item()  # 一个极小值
-gamma = 0.9
-render = False
-log_interval = 100
 
 # %%
 
@@ -80,7 +80,7 @@ class REINFORCE:
 # %%
 
 
-def main():
+if __name__ == '__main__':
     rl = REINFORCE()
     running_reward = 10
     for i_episode in count(1):
@@ -104,8 +104,3 @@ def main():
         #     print("Solved! Running reward is now {} and "
         #           "the last episode runs to {} time steps!".format(running_reward, t))
         #     break
-
-
-# %%
-main()
-# %%
