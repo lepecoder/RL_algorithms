@@ -8,31 +8,29 @@ import torch.nn.functional as F
 from torch.distributions import Categorical
 
 # %%
+env = gym.make('CartPole-v1')
+eps = np.finfo(np.float32).eps.item()  # 一个极小值
+gamma = 0.9
+render = True
+log_interval = 100
+
+# %%
 
 
 class Policy(nn.Module):
-    def __init__(self):
+    def __init__(self, nHidden=64):
         super(Policy, self).__init__()
-        self.affine1 = nn.Linear(4, 16)
-        # self.dropout = nn.Dropout(p=0.6)
-        self.affine2 = nn.Linear(16, 2)
+        self.affine1 = nn.Linear(4, nHidden)
+        self.dropout = nn.Dropout(p=0.6)
+        self.affine2 = nn.Linear(nHidden, 2)
 
     def forward(self, x):
         x = self.affine1(x)
-        # x = self.dropout(x)
+        x = self.dropout(x)
         x = F.relu(x)
         action_scores = self.affine2(x)
         return F.softmax(action_scores, dim=1)
 
-
-# %%
-env = gym.make('CartPole-v1')
-# policy = Policy()
-# optimizer = optim.Adam(policy.parameters(), lr=1e-2)
-eps = np.finfo(np.float32).eps.item()  # 一个极小值
-gamma = 0.9
-render = False
-log_interval = 100
 
 # %%
 
@@ -62,7 +60,7 @@ class REINFORCE:
         for r in self.rewards[::-1]:
             R = r + gamma * R
             returns.append(R)
-        returns = list(reversed(returns))   # 阶段累计奖励G_t
+        returns.reverse()
         returns = torch.tensor(returns)
         returns = (returns - returns.mean()) / (returns.std() + eps)  # baseline处理
         for log_prob, R in zip(self.saved_log_probs, returns):
@@ -76,12 +74,12 @@ class REINFORCE:
         self.saved_log_probs.clear()
 
 
-def main():
+if __name__ == '__main__':
     rl = REINFORCE()
     running_reward = 10
-    for i_episode in count(1):
+    for i_episode in range(1000):
         state, ep_reward = env.reset(), 0
-        for t in range(1, 10000):  # Don't infinite loop while learning
+        for t in range(1, 1000):  # Don't infinite loop while learning
             action = rl.select_action(state)
             state, reward, done, _ = env.step(action)
             rl.rewards.append(reward)
@@ -100,8 +98,3 @@ def main():
             print("Solved! Running reward is now {} and "
                   "the last episode runs to {} time steps!".format(running_reward, t))
             break
-
-
-# %%
-main()
-# %%

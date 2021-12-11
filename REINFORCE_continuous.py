@@ -1,137 +1,118 @@
-# MountainCarContinuous-V0
-
-import numpy as np
+# %%
 import gym
-import matplotlib.pyplot as plt
+import numpy as np
 from itertools import count
-
 import torch
 import torch.nn as nn
-from torch.nn import functional as F
-from torch.optim import adam
-from torch.distributions import Normal
+import torch.nn.functional as F
+from torch.distributions import Categorical
 
-env = gym.make('MountainCarContinuous-v0')
-env = env.unwrapped
-env.seed(1)
-
-torch.manual_seed(1)
-plt.ion()
-
-
-# Hyperparameters
-learning_rate = 0.0075
-gamma = 0.9
-episodes = 1000
-
-eps = np.finfo(np.float32).eps.item()
-
-#action_space = env.action_space.n
-action_space = 1
-state_space = env.observation_space.shape[0]
+# %%
 
 
 class Policy(nn.Module):
     def __init__(self):
         super(Policy, self).__init__()
-
-        self.fc1 = nn.Linear(state_space, 20)
-        self.fc3 = nn.Linear(20, 20)
-        self.mu_head = nn.Linear(20, 1)
-        self.sigma_head = nn.Linear(20, 1)
-
-        self.gamma = gamma
-        self.saved_log_probs = []
-        self.rewards = []
+        self.affine1 = nn.Linear(3, 64)
+        self.affine2 = nn.Linear(64, 128)
+        self.affine2
+        # self.dropout = nn.Dropout(p=0.6)
+        self.affine2 = nn.Linear(64, 1)
+        self.affine2_ = nn.Linear(64, 1)
 
     def forward(self, x):
-
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc3(x))
-        mu = torch.tanh(self.mu_head(x))
-        sigma = F.softplus(self.sigma_head(x))
+        x = torch.squeeze(x)
+        x = self.affine1(x)
+        # x = self.dropout(x)
+        x = F.relu(x)
+        mu = self.affine2(x)
+        sigma = self.affine2_(x)
+        sigma = F.softplus(sigma)
+        # action_scores = self.affine2(x)
+        # return F.softmax(action_scores, dim=1)
         return mu, sigma
 
 
-policy = Policy()
-optimizer = adam.Adam(policy.parameters(), lr=learning_rate)
+# %%
+env = gym.make('Pendulum-v1')
+# policy = Policy()
+# optimizer = optim.Adam(policy.parameters(), lr=1e-2)
+eps = np.finfo(np.float32).eps.item()  # 一个极小值
+gamma = 0.9
+render = False
+log_interval = 100
+
+# %%
 
 
-def select_action(state):
-    state = torch.from_numpy(state).float().unsqueeze(0)
-    mu, sigma = policy(state)
-    dist = Normal(mu, sigma)
-    action = dist.sample()
-    policy.saved_log_probs.append(dist.log_prob(np.clip(action, -1, 1)))
-    action = action.item()
-    return action
+class REINFORCE:
+    def __init__(self) -> None:
+        self.policy = Policy()
+        self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=1e-2)
+        self.saved_log_probs = list()  # 存储ln \pi(\theta)
+        self.rewards = list()  # 存储路径上的rewards
 
+    def select_action(self, state):
+        state = torch.from_numpy(state).float().unsqueeze(0)
+        mu, sigma = self.policy(state)
+        dists = torch.distributions.Normal(mu, sigma)
+        action = dists.sample()
+        probs = dists.log_prob(action)
+        self.saved_log_probs.append(probs)
+        return action.numpy()
 
-def finish_episode():
-    R = 0
-    policy_loss = []
-    rewards = []
+    def learn(self):
+        """ 
+        self.rewards存储一条track上的reward
+        """
+        R = 0
+        returns = list()  # 存储路径上t时刻之后的折扣总回报
+        policy_loss = list()  # 存储路径上t时刻的loss
+        for r in self.rewards[::-1]:
+            R = r + gamma * R
+            returns.append(R)
+        returns = list(reversed(returns))   # 阶段累计奖励G_t
+        returns = torch.tensor(returns)
+        returns = (returns - returns.mean()) / (returns.std() + eps)  # baseline处理
+        for log_prob, R in zip(self.saved_log_probs, returns):
+            policy_loss.append(-log_prob * R)
+        self.optimizer.zero_grad()
+        policy_loss = torch.cat(policy_loss).sum()
+        policy_loss.backward()
+        self.optimizer.step()
+        # 清除这条路径的信息
+        self.rewards.clear()
+        self.saved_log_probs.clear()
 
-    for r in policy.rewards[::-1]:
-        R = r + policy.gamma * R
-        rewards.insert(0, R)
-
-    # Formalize reward
-    rewards = torch.tensor(rewards)
-    rewards = (rewards - rewards.mean()) / (rewards.std() + eps)
-
-    # get loss
-    for reward, log_prob in zip(rewards, policy.saved_log_probs):
-        policy_loss.append(-log_prob * reward)
-
-    optimizer.zero_grad()
-    policy_loss = torch.cat(policy_loss).sum()
-    policy_loss.backward()
-    optimizer.step()
-
-    del policy.rewards[:]
-    del policy.saved_log_probs[:]
-
-
-def plot(steps):
-    #ax = plt.subplot(111)
-    # ax.cla()
-    # plt.set_title('Training')
-    # plt.set_xlabel('Episode')
-    #ax.set_ylabel('Run Time per Episode')
-    plt.plot(steps, 'blue')
-    plt.xlabel('Episode')
-    plt.ylabel('Run Time per Episode')
-    plt.gcf().set_size_inches(10.5, 6.5)
-    plt.grid()
-    plt.savefig('MountainCarContinuousPG.png')
-    plt.pause(0.0000001)
+# %%
 
 
 def main():
-
-    running_reward = 0
-    steps = []
-    for episode in count(0):
-        state = env.reset()
-        print(episode)
-        for t in range(10000):
-            action = select_action(state)
-            action = [action]
-            state, reward, done, info = env.step(action)
-            # if episode > 10:
-            # env.render()
-            policy.rewards.append(reward)
-
+    rl = REINFORCE()
+    running_reward = 10
+    for i_episode in count(1):
+        state, ep_reward = env.reset(), 0
+        for _ in range(1, 1000):  # Don't infinite loop while learning
+            action = rl.select_action(state)
+            state, reward, done, _ = env.step(action)
+            rl.rewards.append(reward)
+            ep_reward += reward
+            if render:
+                env.render()
             if done:
-                print("Episode {}, live time = {}".format(episode, t))
-                steps.append(t)
-                plot(steps)
                 break
+        rl.learn()
 
-        running_reward = running_reward * policy.gamma - t * 0.01
-        finish_episode()
+        running_reward = 0.05 * ep_reward + (1 - 0.05) * running_reward
+        if i_episode % log_interval == 0:
+            print('Episode {}\tLast reward: {:.2f}\tAverage reward: {:.2f}'.format(
+                  i_episode, ep_reward, running_reward))
+        # if running_reward > env.spec.reward_threshold:
+        #     print("Solved! Running reward is now {} and "
+        #           "the last episode runs to {} time steps!".format(running_reward, t))
+        #     break
 
 
-if __name__ == '__main__':
-    main()
+# %%
+main()
+# %%
